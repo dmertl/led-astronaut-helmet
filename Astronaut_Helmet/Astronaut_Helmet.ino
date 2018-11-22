@@ -4,19 +4,41 @@
 #include <avr/power.h>
 #endif
 
+/*
+ *  Two sets of strips
+ *  Helmet strip is under the white helmet portion.
+ *  Face strip is on the face plate.
+ *  Modes:
+ *  - 1 - Rainbow helmet
+ *  - 2 - Rainbow all
+ *  - 3 - All blinky
+ *  - 4 - Scanner helmet
+ *  - 5 - Scanner face
+ *  - 6 - Vertical Scan & Flash
+ *  - 7 - Night mode (red light)
+ *  - 8 - Flashlight
+ *  - 9 - Police mode
+ *  - 10 - Off
+  */
+
 /*****************/
 /* Configuration */
 /*****************/
 
 // Pin the mode button is wired to
 const uint8_t button_pin = 8;
-// Pin LED strip is wired to
-const uint8_t strip_pin = 2;
-// Number of LEDs in strip
-const uint16_t num_leds = 26;
+// Pin helmet LED strip is wired to
+const uint8_t helmet_strip_pin = 2;
+// Number of LEDs in helmet strip
+const uint16_t helmet_num_leds = 26;
+// Pin face shield LED strip is wired to
+const uint8_t face_strip_pin = 10;
+// Number of LEDs in face shield strip
+// 13 + 13 + 12 + 8
+const uint16_t face_num_leds = 46;
 
 // Pattern types supported:
-enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE };
+enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FACE_SCANNER, FADE, VERTICAL_SCAN_FLASH_HELMET, VERTICAL_SCAN_FLASH_FACE };
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
@@ -72,8 +94,17 @@ class NeoPatterns : public Adafruit_NeoPixel
           case SCANNER:
             ScannerUpdate();
             break;
+          case FACE_SCANNER:
+            FaceScannerUpdate();
+            break;
           case FADE:
             FadeUpdate();
+            break;
+         case VERTICAL_SCAN_FLASH_HELMET:
+            VerticalScanFlashHelmetUpdate();
+            break;
+         case VERTICAL_SCAN_FLASH_FACE:
+            VerticalScanFlashFaceUpdate();
             break;
           default:
             break;
@@ -215,6 +246,141 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
+    // Initialize for a FACE_SCANNNER
+    void FaceScanner(uint32_t color1, uint8_t interval)
+    {
+      ActivePattern = FACE_SCANNER;
+      Interval = interval;
+      // Hardcoded to length of longest strip
+      TotalSteps = (13 - 1) * 2;
+      Color1 = color1;
+      Index = 0;
+    }
+
+    // Update the Face Scanner Pattern
+    // Customized scanner to do entire face strip as a grid
+    // 13 LEDs in longest 2 strips
+    // 12 LEDs in middle, then 8 in top
+    void FaceScannerUpdate()
+    {
+      // Lower strip goes backwards (13 LEDs, 13-25)
+      int lower_i = 25;
+      // i = bottom strip (13 LEDs, 0-12)
+      for (int i = 0; i < 13; i++)
+      {
+        if (i == Index || i == TotalSteps - Index)
+        {
+          setPixelColor(i, Color1);
+          setPixelColor(lower_i, Color1);
+        }
+        else  // fade to black
+        {
+          setPixelColor(i, DimColor(getPixelColor(i)));
+          setPixelColor(lower_i, DimColor(getPixelColor(lower_i)));
+        }
+        lower_i--;
+      }
+      // Middle strip forwards (12 LEDs, 26-37)
+      // Technically we miss one LED step at the end, but it looks fine
+      for (int i = 0; i < 12; i++) {
+        if (i == Index || i == TotalSteps - Index) {
+          setPixelColor(i + 26, Color1);
+        } else {
+          setPixelColor(i + 26, DimColor(getPixelColor(i + 26)));
+        }
+      }
+      // Top strip backward & offset (8 LEDs, 38-45)
+      // Offset by 2 pixel on each side
+      for (int i = 0; i < 8; i++) {
+        if (i == Index - 2 || i == TotalSteps - Index - 2) {
+          setPixelColor(45 - i, Color1);
+        } else {
+          setPixelColor(45 - i, DimColor(getPixelColor(45 - i)));
+        }
+      }
+      show();
+      Increment();
+    }
+
+    // Initialize for a VERTICAL_SCAN_FLASH_FACE
+    void VerticalScanFlashFace(uint32_t color1, uint8_t interval)
+    {
+      ActivePattern = VERTICAL_SCAN_FLASH_FACE;
+      Interval = interval;
+      TotalSteps = 58;
+      Color1 = color1;
+      Index = 0;
+    }
+
+    // Scan vertically, then flash at the end
+    // 0-12, 13-25, 26-37, 38-45
+    void VerticalScanFlashFaceUpdate()
+    {
+      if (Index == 44) {
+        // Flash
+        for (int i = 0; i < 46; i++) {
+          setPixelColor(i, Color1);
+        }
+      } else {
+        // Vertical scan
+        // Dim all pixels
+        for (int i = 0; i < 46; i++) {
+          setPixelColor(i, DimColor(getPixelColor(i)));
+        }
+        // Light current strip
+        if (Index == 0) {
+          // Bottom strip
+          for (int i = 0; i < 13; i++) {
+            setPixelColor(i, Color1);
+          }
+        } else if (Index == 8) {
+          // Lower strip
+          for (int i = 13; i < 26; i++) {
+            setPixelColor(i, Color1);
+          }
+        } else if (Index == 16) {
+          // Middle strip
+          for (int i = 26; i < 38; i++) {
+            setPixelColor(i, Color1);
+          }
+        } else if (Index == 24) {
+          // Top strip
+          for (int i = 38; i < 46; i++) {
+            setPixelColor(i, Color1);
+          }
+        }
+      }
+      show();
+      Increment();
+    }
+
+    // Initialize for a VERTICAL_SCAN_FLASH_HELMET
+    void VerticalScanFlashHelmet(uint32_t color1, uint8_t interval)
+    {
+      ActivePattern = VERTICAL_SCAN_FLASH_HELMET;
+      Interval = interval;
+      TotalSteps = 58;
+      Color1 = color1;
+      Index = 0;
+    }
+
+    // Helmet only does the flash
+    void VerticalScanFlashHelmetUpdate()
+    {
+      if (Index == 44 || Index == 32) {
+        // Flash
+        for (int i = 0; i < numPixels(); i++) {
+          setPixelColor(i, Color1);
+        }
+      } else {
+        for (int i = 0; i < 46; i++) {
+          setPixelColor(i, DimColor(getPixelColor(i)));
+        }
+      }
+      show();
+      Increment();
+    }
+
     // Initialize for a Fade
     void Fade(uint32_t color1, uint32_t color2, uint16_t steps, uint8_t interval, direction dir = FORWARD)
     {
@@ -310,6 +476,89 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 };
 
+class Helmet
+{
+  public:
+    NeoPatterns& helmet_strip;
+    NeoPatterns& face_strip;
+    Helmet(NeoPatterns& helmet, NeoPatterns& face);
+    void begin();
+    void Update();
+    void rainbowHelmet();
+    void rainbowAll();
+    void blinky();
+    void scannerHelmet();
+    void scannerFace();
+    void redFlashlight();
+    void flashlight();
+    void police();
+    void off();
+    void verticalScanFlash();
+};
+
+Helmet::Helmet(NeoPatterns& helmet, NeoPatterns& face):
+  helmet_strip(helmet), face_strip(face) {};
+
+void Helmet::begin() {
+  helmet_strip.begin();
+  face_strip.begin();
+}
+
+void Helmet::Update() {
+  helmet_strip.Update();
+  face_strip.Update();
+}
+
+void Helmet::rainbowHelmet() {
+  helmet_strip.RainbowCycle(10, 3);
+  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+}
+
+void Helmet::rainbowAll() {
+  helmet_strip.RainbowCycle(10, 3);
+  face_strip.RainbowCycle(10, 3);
+}
+
+void Helmet::blinky() {
+  helmet_strip.TheaterChase(helmet_strip.Color(128, 128, 128), helmet_strip.Color(0, 0, 0), 40);
+  face_strip.TheaterChase(face_strip.Color(128, 128, 128), face_strip.Color(0, 0, 0), 40);
+}
+
+void Helmet::scannerHelmet() {
+  helmet_strip.Scanner(helmet_strip.Color(200, 200, 200), 80);
+  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+}
+
+void Helmet::scannerFace() {
+  helmet_strip.ColorWipe(helmet_strip.Color(0, 0, 0), 5);
+  face_strip.FaceScanner(face_strip.Color(200, 200, 200), 80);
+}
+
+void Helmet::redFlashlight() {
+  helmet_strip.ColorWipe(helmet_strip.Color(200, 0, 0), 10);
+  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+}
+
+void Helmet::flashlight() {
+  helmet_strip.ColorWipe(helmet_strip.Color(128, 128, 128), 10);
+  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+}
+
+void Helmet::police() {
+  helmet_strip.TheaterChase(helmet_strip.Color(255, 0, 0), helmet_strip.Color(0, 0, 255), 100);
+  face_strip.TheaterChase(face_strip.Color(255, 0, 0), face_strip.Color(0, 0, 255), 100);
+}
+
+void Helmet::off() {
+  helmet_strip.ColorWipe(helmet_strip.Color(0, 0, 0), 5);
+  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+}
+
+void Helmet::verticalScanFlash() {
+  helmet_strip.VerticalScanFlashHelmet(helmet_strip.Color(255, 255, 255), 60);
+  face_strip.VerticalScanFlashFace(face_strip.Color(255, 255, 255), 60);
+}
+
 /****************/
 /* Global State */
 /****************/
@@ -317,7 +566,9 @@ class NeoPatterns : public Adafruit_NeoPixel
 // Current drawing mode
 uint8_t current_mode = 1;
 
-NeoPatterns strip = NeoPatterns(num_leds, strip_pin, NEO_GRB + NEO_KHZ800);
+NeoPatterns helmet_strip = NeoPatterns(helmet_num_leds, helmet_strip_pin, NEO_GRB + NEO_KHZ800);
+NeoPatterns face_strip = NeoPatterns(face_num_leds, face_strip_pin, NEO_GRB + NEO_KHZ800);
+Helmet helmet = Helmet(helmet_strip, face_strip);
 
 Bounce mode_button = Bounce();
 
@@ -327,8 +578,8 @@ void setup() {
   mode_button.attach(button_pin);
   mode_button.interval(10);
 
-  // Init LED strip
-  strip.begin();
+  // Init LED strips
+  helmet.begin();
   draw();
 }
 
@@ -342,38 +593,36 @@ void loop() {
     draw();
   }
 
-  // LED Strip
-  strip.Update();
+  // LEDs
+  helmet.Update();
 }
 
 void draw() {
-  switch (current_mode) {
-    // TODO: Better brightness control for rainbow, use a float
-    case 1: strip.RainbowCycle(5, 3);
+  switchMode(helmet, current_mode);
+}
+
+void switchMode(Helmet& helmet, uint8_t& mode) {
+  switch (mode) {
+    case 1: helmet.rainbowHelmet();
       break;
-    case 2: strip.RainbowCycle(5, 2);
+    case 2: helmet.rainbowAll();
       break;
-    case 3: strip.RainbowCycle(5, 1);
+    case 3: helmet.blinky();
       break;
-    case 4: strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 3), 10);
+    case 4: helmet.scannerHelmet();
       break;
-    case 5: strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 0), 10);
+    case 5: helmet.scannerFace();
       break;
-    case 6: strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 80);
+    case 6: helmet.verticalScanFlash();
       break;
-    case 7: strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 40);
+    case 7: helmet.redFlashlight();
       break;
-    case 8: strip.Scanner(strip.Color(200, 200, 200), 50);
+    case 8: helmet.flashlight();
       break;
-    case 9: strip.Scanner(strip.Color(200, 200, 200), 100);
+    case 9: helmet.police();
       break;
-    case 10: strip.Scanner(strip.Color(200, 0, 0), 100);
-      break;
-    case 11: strip.Scanner(strip.Color(0, 0, 200), 100);
-      break;
-    default: strip.ColorWipe(strip.Color(0, 0, 0), 5);
-      current_mode = 0;
+    default: helmet.off();
+      mode = 0;
       break;
   }
 }
-
