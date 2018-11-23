@@ -170,7 +170,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Update the Rainbow Cycle Pattern
     void RainbowCycleUpdate()
     {
-      for (int i = 0; i < numPixels(); i++)
+      for (uint8_t i = 0; i < numPixels(); i++)
       {
         setPixelColor(i, DimColorShift(Wheel(((i * 256 / numPixels()) + Index) & 255), Dim));
       }
@@ -212,7 +212,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Update the Theater Chase Pattern
     void TheaterChaseUpdate()
     {
-      for (int i = 0; i < numPixels(); i++)
+      for (uint8_t i = 0; i < numPixels(); i++)
       {
         if ((i + Index) % 3 == 0)
         {
@@ -240,7 +240,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Update the Scanner Pattern
     void ScannerUpdate()
     {
-      for (int i = 0; i < numPixels(); i++)
+      for (uint8_t i = 0; i < numPixels(); i++)
       {
         if (i == Index) // first half of the scan
         {
@@ -402,7 +402,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         chosen = random(0, numPixels());
       }
       
-      for (int i = 0; i < numPixels(); i++) {
+      for (uint8_t i = 0; i < numPixels(); i++) {
         if (chosen != NULL && i == chosen) {
           // Light chosen pixel
           setPixelColor(i, Color1);
@@ -421,7 +421,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 
     void FireUpdate() {
-      for (int i = 0; i < this->numPixels(); i++) {
+      for (uint8_t i = 0; i < this->numPixels(); i++) {
         uint8_t flicker = random(0, 40);
         // TODO: Use dim instead?
         this->setPixelColor(i, max(255 - flicker, 0), max(96 - flicker, 0), max(12 - flicker, 0));
@@ -500,7 +500,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Set all pixels to a color (synchronously)
     void ColorSet(uint32_t color)
     {
-      for (int i = 0; i < numPixels(); i++)
+      for (uint8_t i = 0; i < numPixels(); i++)
       {
         setPixelColor(i, color);
       }
@@ -510,7 +510,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     void Off()
     {
       ActivePattern = NULL;
-      for (int i = 0; i < numPixels(); i++) {
+      for (uint8_t i = 0; i < numPixels(); i++) {
         setPixelColor(i, this->Color(0, 0, 0));
       }
       show();
