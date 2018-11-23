@@ -9,16 +9,16 @@
  *  Helmet strip is under the white helmet portion.
  *  Face strip is on the face plate.
  *  Modes:
- *  - 1 - Rainbow helmet
- *  - 2 - Rainbow all
- *  - 3 - All blinky
- *  - 4 - Scanner helmet
- *  - 5 - Scanner face
- *  - 6 - Vertical Scan & Flash
- *  - 7 - Night mode (red light)
- *  - 8 - Flashlight
- *  - 9 - Police mode
- *  - 10 - Off
+ *  
+ *  - Rainbow helmet
+ *  - Rainbow all
+ *  - Scanner helmet
+ *  - Scanner face
+ *  - Vertical Strobe
+ *  - Night mode (red light)
+ *  - Flashlight
+ *  - Blinky
+ *  - Police mode
   */
 
 /*****************/
@@ -41,23 +41,6 @@ const uint16_t face_num_leds = 46;
 enum  direction { FORWARD, REVERSE };
 
 // NeoPattern Class - derived from the Adafruit_NeoPixel class
-/**
- * The pattern class is great, but we need patterns that we can coordinate
- * across multiple strips. Importantly we need a single timer to coordinate
- * pattern steps. Areas where it gets complex is patterns that rely on pixel
- * count. For example scanner needs to go end to end. Maybe Helmet can
- * differentiate between single and coordinated patterns.
-
- Init, set each strip vars
-   Helmet can coordinate init between strips
- Update, call each strip update method
-   Strip update can handle last update and interval
-   Strip update will call pattern specific function
-   Coordination between strips will still rely on using same vars
-     For example, helmet flash does nothing until last index
-     Has to be a separate function
-
- */
 class NeoPatterns : public Adafruit_NeoPixel
 {
   public:
@@ -150,7 +133,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
       for (int i = 0; i < numPixels(); i++)
       {
-        setPixelColor(i, DimColor(Wheel(((i * 256 / numPixels()) + Index) & 255), Dim));
+        setPixelColor(i, DimColorShift(Wheel(((i * 256 / numPixels()) + Index) & 255), Dim));
       }
       show();
       Increment();
@@ -397,6 +380,37 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
+    // Twinkle pattern
+    void Twinkle(uint32_t color, uint8_t interval)
+    {
+      ActivePattern = &TwinkleUpdate;
+      Interval = interval;
+      Color1 = color;
+    }
+
+    // Twinkle pattern update
+    void TwinkleUpdate()
+    {
+      // Randomly choose if we are going to light a pixel
+      uint8_t no_twinkle = random(0, 3);
+      uint8_t chosen = NULL;
+      if (no_twinkle == 0) {
+        // Randomly choose pixel to twinkle
+        chosen = random(0, numPixels());
+      }
+      
+      for (int i = 0; i < numPixels(); i++) {
+        if (chosen != NULL && i == chosen) {
+          // Light chosen pixel
+          setPixelColor(i, Color1);
+        } else {
+          // Fade all other pixels
+          setPixelColor(i, DimColor(getPixelColor(i), 0.75));
+        }
+      }
+      show();
+    }
+
     // Returns the Red component of a 32-bit color
     uint8_t Red(uint32_t color)
     {
@@ -416,9 +430,16 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 
     // Return color, dimmed by 75% (used by scanner)
-    uint32_t DimColor(uint32_t color, uint8_t shift = 1)
+    uint32_t DimColorShift(uint32_t color, uint8_t shift = 1)
     {
       uint32_t dimColor = Color(Red(color) >> shift, Green(color) >> shift, Blue(color) >> shift);
+      return dimColor;
+    }
+
+    // Return color, dimmed to a percentage, default 25% of original
+    uint32_t DimColor(uint32_t color, float fade = 0.25)
+    {
+      uint32_t dimColor = Color(Red(color) * fade, Green(color) * fade, Blue(color) * fade);
       return dimColor;
     }
 
@@ -487,16 +508,17 @@ class Helmet
     // Current display mode (pattern switching)
     uint8_t current_mode = 0;
     // List of display mode method pointers
-    void (Helmet::*modes[10])() = {
+    void (Helmet::*modes[11])() = {
       &off,
       &rainbowHelmet,
       &rainbowAll,
-      &blinky,
+      &twinkle,
       &scannerHelmet,
       &scannerFace,
       &strobe,
       &redFlashlight,
       &flashlight,
+      &blinky,
       &police
     };
     // LED strip in helmet
@@ -525,7 +547,7 @@ class Helmet
     void next() {
       this->current_mode++;
       // Loop at max mode
-      if (this->current_mode > 9) {
+      if (this->current_mode > 10) {
         this->current_mode = 0;
       }
       // Call current mode method
@@ -584,6 +606,12 @@ class Helmet
     void strobe() {
       helmet_strip.StrobeHelmet(helmet_strip.Color(255, 255, 255), 60);
       face_strip.StrobeFace(face_strip.Color(255, 255, 255), 60);
+    }
+
+    // Twinkle random LEDs
+    void twinkle() {
+      helmet_strip.Twinkle(face_strip.Color(255, 255, 255), 40);
+      face_strip.Twinkle(face_strip.Color(255, 255, 255), 40);
     }
 
     // Turn off all the LEDs
