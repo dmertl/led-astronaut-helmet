@@ -13,17 +13,16 @@
  *  
  *  - Rainbow helmet
  *  - Rainbow all
+ *  - Twinkle
  *  - Scanner helmet
  *  - Scanner face
  *  - Vertical Strobe
  *  - Night mode (red light)
  *  - Flashlight
+ *  - Fire helmet
+ *  - Rainbow fire face
  *  - Blinky
  *  - Police mode
- *  
- *  TODO: Use a 2D coordinate grid to support face shield, convert from coord to pixel # on strip
- *  TODO: Flame effects!
- *  TODO: Use u8int_t instead of int
   */
 
 /*****************/
@@ -91,6 +90,8 @@ class NeoPatterns : public Adafruit_NeoPixel
     uint16_t Index;
     // Amount to dim brightness (bit shift)
     uint8_t Dim;
+    // Heat index for fire
+    uint8_t *heat;
     // Pixel grid
     PixelGrid *Grid = NULL;
     // On complete callback
@@ -417,16 +418,113 @@ class NeoPatterns : public Adafruit_NeoPixel
     void Fire(uint8_t interval) {
       ActivePattern = &FireUpdate;
       Interval = interval;
-      Color1 = this->Color(255, 96, 12);
+      heat = new uint8_t[this->numPixels()];
     }
 
     void FireUpdate() {
+      uint8_t cooldown;
+
+      // Cooldown pixels
       for (uint8_t i = 0; i < this->numPixels(); i++) {
-        uint8_t flicker = random(0, 40);
-        // TODO: Use dim instead?
-        this->setPixelColor(i, max(255 - flicker, 0), max(96 - flicker, 0), max(12 - flicker, 0));
+        cooldown = random(0, ((55 * 10) / this->numPixels()) + 2);
+        heat[i] = max(0, heat[i] - cooldown);
       }
+
+      // Heat drifts up and diffuses
+      for (uint8_t y = this->numPixels() - 1; y >= 2; y--) {
+        heat[y] = (heat[y - 1] + heat[y - 2] + heat[y - 2]) / 3;
+      }
+
+      // Randomly ignite sparks near bottom
+      if (random(255) < 120) {
+        uint8_t y = random(7);
+        heat[y] = heat[y] + random(160, 255);
+      }
+      
+      // Set pixel colors
+      for (uint8_t i = 0; i < this->numPixels(); i++) {
+        setPixelHeatColor(i, heat[i]);
+      }
+
       this->show();
+    }
+
+    void setPixelHeatColor (int pixel, uint8_t temperature) {
+      // Scale 'heat' down from 0-255 to 0-191
+      uint8_t t192 = round((temperature/255.0)*191);
+     
+      // calculate ramp up from
+      uint8_t heatramp = t192 & 0x3F; // 0..63
+      heatramp <<= 2; // scale up to 0..252
+     
+      // figure out which third of the spectrum we're in:
+      if( t192 > 0x80) {                     // hottest
+        this->setPixelColor(pixel, this->DimColor(this->Color(255, 255, heatramp), 0.75));
+      } else if( t192 > 0x40 ) {             // middle
+        this->setPixelColor(pixel, this->DimColor(this->Color(255, heatramp, 0), 0.75));
+      } else {                               // coolest
+        this->setPixelColor(pixel, this->DimColor(this->Color(heatramp, 0, 0), 0.75));
+      }
+    }
+
+    void RainbowFire(uint8_t interval) {
+      ActivePattern = &RainbowFireUpdate;
+      Interval = interval;
+      TotalSteps = 255;
+      Index = 0;
+      heat = new uint8_t[this->numPixels()];
+    }
+
+    void RainbowFireUpdate() {
+      uint8_t cooldown;
+
+      // Rotate color
+      Color1 = Wheel(Index);
+
+      // Cooldown pixels
+      for (uint8_t i = 0; i < this->numPixels(); i++) {
+        cooldown = random(0, ((55 * 10) / this->numPixels()) + 2);
+        heat[i] = max(0, heat[i] - cooldown);
+      }
+
+      // Heat drifts up and diffuses
+      for (uint8_t y = this->numPixels() - 1; y >= 2; y--) {
+        heat[y] = (heat[y - 1] + heat[y - 2] + heat[y - 2]) / 3;
+      }
+
+      // Randomly ignite sparks near bottom
+      if (random(255) < 120) {
+        uint8_t y = random(7);
+        heat[y] = heat[y] + random(160, 255);
+      }
+      
+      // Set pixel colors
+      for (uint8_t i = 0; i < this->numPixels(); i++) {
+        setPixelRainbowHeatColor(i, heat[i], Color1);
+      }
+
+      this->show();
+      Increment();
+    }
+
+    void setPixelRainbowHeatColor (int pixel, uint8_t temperature, uint32_t color) {
+      // Scale 'heat' down from 0-255 to 0-191
+      uint8_t t192 = round((temperature/255.0)*191);
+     
+      // calculate ramp up from
+      uint8_t heatramp = t192 & 0x3F; // 0..63
+      heatramp <<= 2; // scale up to 0..252
+      uint16_t heatscale;
+     
+      // Keep the same scale as fire, but split it between R G B based on current color
+      if( t192 > 0x80) {                     // hottest
+        heatscale = heatramp + 255 + 255;
+      } else if( t192 > 0x40 ) {             // middle
+        heatscale = heatramp + 255;
+      } else {                               // coolest
+        heatscale = heatramp;
+      }
+      this->setPixelColor(pixel, this->DimColor(this->Color(Red(color) / 255.0 * heatscale, Green(color) / 255.0 * heatscale, Blue(color) / 255.0 * heatscale), 0.5));
     }
 
     // Returns the Red component of a 32-bit color
@@ -459,6 +557,13 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
       uint32_t dimColor = Color(Red(color) * fade, Green(color) * fade, Blue(color) * fade);
       return dimColor;
+    }
+
+    // Return color, brightened by a %
+    uint32_t BrightenColor(uint32_t color, float brighten = 1.25)
+    {
+      uint32_t brightColor = Color(min(255, Red(color) * brighten), min(255, Green(color) * brighten), min(255, Blue(color) * brighten));
+      return brightColor;
     }
 
     // Input a value 0 to 255 to get a color value.
@@ -526,9 +631,8 @@ class Helmet
     // Current display mode (pattern switching)
     uint8_t current_mode = 0;
     // List of display mode method pointers
-    void (Helmet::*modes[12])() = {
+    void (Helmet::*modes[13])() = {
       &off,
-      &fire,
       &rainbowHelmet,
       &rainbowAll,
       &twinkle,
@@ -537,6 +641,8 @@ class Helmet
       &strobe,
       &redFlashlight,
       &flashlight,
+      &fire,
+      &rainbowFire,
       &blinky,
       &police
     };
@@ -566,7 +672,7 @@ class Helmet
     void next() {
       this->current_mode++;
       // Loop at max mode
-      if (this->current_mode > 11) {
+      if (this->current_mode > 12) {
         this->current_mode = 0;
       }
       // Call current mode method
@@ -634,10 +740,15 @@ class Helmet
     }
 
     // Fire
-    // TODO: This fire pattern doesn't actually look that great
     void fire() {
-      helmet_strip.Fire(100);
+      helmet_strip.Fire(40);
       face_strip.Off();
+    }
+
+    // Rainbow fire
+    void rainbowFire() {
+      helmet_strip.Off();
+      face_strip.RainbowFire(40);
     }
 
     // Turn off all the LEDs
