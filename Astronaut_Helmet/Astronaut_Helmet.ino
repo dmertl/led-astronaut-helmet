@@ -37,29 +37,48 @@ const uint8_t face_strip_pin = 10;
 // 13 + 13 + 12 + 8
 const uint16_t face_num_leds = 46;
 
-// Pattern types supported:
-enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FACE_SCANNER, FADE, VERTICAL_SCAN_FLASH_HELMET, VERTICAL_SCAN_FLASH_FACE };
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
 // NeoPattern Class - derived from the Adafruit_NeoPixel class
+/**
+ * The pattern class is great, but we need patterns that we can coordinate
+ * across multiple strips. Importantly we need a single timer to coordinate
+ * pattern steps. Areas where it gets complex is patterns that rely on pixel
+ * count. For example scanner needs to go end to end. Maybe Helmet can
+ * differentiate between single and coordinated patterns.
+
+ Init, set each strip vars
+   Helmet can coordinate init between strips
+ Update, call each strip update method
+   Strip update can handle last update and interval
+   Strip update will call pattern specific function
+   Coordination between strips will still rely on using same vars
+     For example, helmet flash does nothing until last index
+     Has to be a separate function
+
+ */
 class NeoPatterns : public Adafruit_NeoPixel
 {
   public:
-
-    // Member Variables:
-    pattern  ActivePattern;  // which pattern is running
-    direction Direction;     // direction to run the pattern
-
-    unsigned long Interval;   // milliseconds between updates
-    unsigned long lastUpdate; // last update of position
-
-    uint32_t Color1, Color2;  // What colors are in use
-    uint16_t TotalSteps;  // total number of steps in the pattern
-    uint16_t Index;  // current step within the pattern
-    uint8_t Dim; // Amount to dim brightness (bit shift)
-
-    void (*OnComplete)();  // Callback on completion of pattern
+    // Pointer to active pattern update method
+    void (NeoPatterns::*ActivePattern)() = NULL;
+    // Direction to run the pattern
+    direction Direction;
+    // ms between updates
+    unsigned long Interval;
+    // Last update of position
+    unsigned long lastUpdate;
+    // Colors in pattern
+    uint32_t Color1, Color2;
+    // Total number of steps in the pattern
+    uint16_t TotalSteps;
+    // Current step within the pattern
+    uint16_t Index;
+    // Amount to dim brightness (bit shift)
+    uint8_t Dim;
+    // On complete callback
+    void (*OnComplete)();
 
     // Constructor - calls base-class constructor to initialize strip
     NeoPatterns(uint16_t pixels, uint8_t pin, uint8_t type)
@@ -80,34 +99,8 @@ class NeoPatterns : public Adafruit_NeoPixel
       if ((millis() - lastUpdate) > Interval) // time to update
       {
         lastUpdate = millis();
-        switch (ActivePattern)
-        {
-          case RAINBOW_CYCLE:
-            RainbowCycleUpdate();
-            break;
-          case THEATER_CHASE:
-            TheaterChaseUpdate();
-            break;
-          case COLOR_WIPE:
-            ColorWipeUpdate();
-            break;
-          case SCANNER:
-            ScannerUpdate();
-            break;
-          case FACE_SCANNER:
-            FaceScannerUpdate();
-            break;
-          case FADE:
-            FadeUpdate();
-            break;
-         case VERTICAL_SCAN_FLASH_HELMET:
-            VerticalScanFlashHelmetUpdate();
-            break;
-         case VERTICAL_SCAN_FLASH_FACE:
-            VerticalScanFlashFaceUpdate();
-            break;
-          default:
-            break;
+        if (ActivePattern != NULL) {
+          (*this.*ActivePattern)();
         }
       }
     }
@@ -144,7 +137,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a RainbowCycle
     void RainbowCycle(uint8_t interval, uint8_t dim = 0, direction dir = FORWARD)
     {
-      ActivePattern = RAINBOW_CYCLE;
+      ActivePattern = &RainbowCycleUpdate;
       Interval = interval;
       TotalSteps = 255;
       Index = 0;
@@ -166,7 +159,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a ColorWipe
     void ColorWipe(uint32_t color, uint8_t interval, direction dir = FORWARD)
     {
-      ActivePattern = COLOR_WIPE;
+      ActivePattern = &ColorWipeUpdate;
       Interval = interval;
       TotalSteps = numPixels();
       Color1 = color;
@@ -185,7 +178,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a Theater Chase
     void TheaterChase(uint32_t color1, uint32_t color2, uint8_t interval, direction dir = FORWARD)
     {
-      ActivePattern = THEATER_CHASE;
+      ActivePattern = &TheaterChaseUpdate;
       Interval = interval;
       TotalSteps = numPixels();
       Color1 = color1;
@@ -215,7 +208,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a SCANNNER
     void Scanner(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = SCANNER;
+      ActivePattern = &ScannerUpdate;
       Interval = interval;
       TotalSteps = (numPixels() - 1) * 2;
       Color1 = color1;
@@ -249,7 +242,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a FACE_SCANNNER
     void FaceScanner(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = FACE_SCANNER;
+      ActivePattern = &FaceScannerUpdate;
       Interval = interval;
       // Hardcoded to length of longest strip
       TotalSteps = (13 - 1) * 2;
@@ -305,7 +298,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a VERTICAL_SCAN_FLASH_FACE
     void VerticalScanFlashFace(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = VERTICAL_SCAN_FLASH_FACE;
+      ActivePattern = &VerticalScanFlashFaceUpdate;
       Interval = interval;
       TotalSteps = 58;
       Color1 = color1;
@@ -357,7 +350,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a VERTICAL_SCAN_FLASH_HELMET
     void VerticalScanFlashHelmet(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = VERTICAL_SCAN_FLASH_HELMET;
+      ActivePattern = &VerticalScanFlashHelmetUpdate;
       Interval = interval;
       TotalSteps = 58;
       Color1 = color1;
@@ -384,7 +377,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     // Initialize for a Fade
     void Fade(uint32_t color1, uint32_t color2, uint16_t steps, uint8_t interval, direction dir = FORWARD)
     {
-      ActivePattern = FADE;
+      ActivePattern = &FadeUpdate;
       Interval = interval;
       TotalSteps = steps;
       Color1 = color1;
@@ -474,6 +467,15 @@ class NeoPatterns : public Adafruit_NeoPixel
       }
       show();
     }
+
+    void Off()
+    {
+      ActivePattern = NULL;
+      for (int i = 0; i < numPixels(); i++) {
+        setPixelColor(i, this->Color(0, 0, 0));
+      }
+      show();
+    }
 };
 
 class Helmet
@@ -526,22 +528,22 @@ void Helmet::blinky() {
 
 void Helmet::scannerHelmet() {
   helmet_strip.Scanner(helmet_strip.Color(200, 200, 200), 80);
-  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+  face_strip.Off();
 }
 
 void Helmet::scannerFace() {
-  helmet_strip.ColorWipe(helmet_strip.Color(0, 0, 0), 5);
+  helmet_strip.Off();
   face_strip.FaceScanner(face_strip.Color(200, 200, 200), 80);
 }
 
 void Helmet::redFlashlight() {
   helmet_strip.ColorWipe(helmet_strip.Color(200, 0, 0), 10);
-  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+  face_strip.Off();
 }
 
 void Helmet::flashlight() {
   helmet_strip.ColorWipe(helmet_strip.Color(128, 128, 128), 10);
-  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+  face_strip.Off();
 }
 
 void Helmet::police() {
@@ -550,8 +552,8 @@ void Helmet::police() {
 }
 
 void Helmet::off() {
-  helmet_strip.ColorWipe(helmet_strip.Color(0, 0, 0), 5);
-  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+  helmet_strip.Off();
+  face_strip.Off();
 }
 
 void Helmet::verticalScanFlash() {
@@ -584,7 +586,6 @@ void setup() {
 }
 
 void loop() {
-
   // Button
   if (mode_button.update()) {
     if (mode_button.fell()) {
@@ -592,7 +593,6 @@ void loop() {
     }
     draw();
   }
-
   // LEDs
   helmet.Update();
 }
