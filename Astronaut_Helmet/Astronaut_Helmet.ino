@@ -8,6 +8,7 @@
  *  Two sets of strips
  *  Helmet strip is under the white helmet portion.
  *  Face strip is on the face plate.
+ *  
  *  Modes:
  *  
  *  - Rainbow helmet
@@ -19,6 +20,10 @@
  *  - Flashlight
  *  - Blinky
  *  - Police mode
+ *  
+ *  TODO: Use a 2D coordinate grid to support face shield, convert from coord to pixel # on strip
+ *  TODO: Flame effects!
+ *  TODO: Use u8int_t instead of int
   */
 
 /*****************/
@@ -40,6 +45,32 @@ const uint16_t face_num_leds = 46;
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
+class PixelGrid
+{
+  public:
+    uint8_t static const NA = 255;
+    uint8_t width = NULL;
+    uint8_t height = NULL;
+    uint8_t *grid;
+    uint8_t y_offset = NULL;
+
+    PixelGrid(uint8_t width, uint8_t height, uint8_t *grid)
+    :width(width), height(height), grid(grid) {
+        this->y_offset = this->width * (this->height - 1);
+    };
+
+    uint8_t get(uint8_t x, uint8_t y)
+    {
+      uint8_t pos = this->y_offset - (this->width * y) + x;
+      return this->grid[pos];
+    }
+
+    uint8_t numPixels()
+    {
+      return this->width * this->height;
+    }
+};
+
 // NeoPattern Class - derived from the Adafruit_NeoPixel class
 class NeoPatterns : public Adafruit_NeoPixel
 {
@@ -60,6 +91,8 @@ class NeoPatterns : public Adafruit_NeoPixel
     uint16_t Index;
     // Amount to dim brightness (bit shift)
     uint8_t Dim;
+    // Pixel grid
+    PixelGrid *Grid = NULL;
     // On complete callback
     void (*OnComplete)();
 
@@ -74,6 +107,12 @@ class NeoPatterns : public Adafruit_NeoPixel
       : Adafruit_NeoPixel(pixels, pin, type)
     {
       OnComplete = callback;
+    }
+
+    NeoPatterns(uint16_t pixels, uint8_t pin, uint8_t type, PixelGrid &grid)
+      : NeoPatterns(pixels, pin, type)
+    {
+      this->Grid = &grid;
     }
 
     // Update the pattern
@@ -205,12 +244,10 @@ class NeoPatterns : public Adafruit_NeoPixel
       {
         if (i == Index) // first half of the scan
         {
-          Serial.print(i);
           setPixelColor(i, Color1);
         }
         else if (i == TotalSteps - Index) // The return trip.
         {
-          Serial.print(i);
           setPixelColor(i, Color1);
         }
         else  // fade to black
@@ -222,56 +259,30 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
-    // Initialize for a FACE_SCANNNER
+    // Face scanner init
     void FaceScanner(uint32_t color1, uint8_t interval)
     {
       ActivePattern = &FaceScannerUpdate;
       Interval = interval;
-      // Hardcoded to length of longest strip
-      TotalSteps = (13 - 1) * 2;
+      TotalSteps = this->Grid->width * 2;
       Color1 = color1;
       Index = 0;
     }
 
-    // Update the Face Scanner Pattern
-    // Customized scanner to do entire face strip as a grid
-    // 13 LEDs in longest 2 strips
-    // 12 LEDs in middle, then 8 in top
+    // Face scanner update
     void FaceScannerUpdate()
     {
-      // Lower strip goes backwards (13 LEDs, 13-25)
-      int lower_i = 25;
-      // i = bottom strip (13 LEDs, 0-12)
-      for (int i = 0; i < 13; i++)
-      {
-        if (i == Index || i == TotalSteps - Index)
-        {
-          setPixelColor(i, Color1);
-          setPixelColor(lower_i, Color1);
-        }
-        else  // fade to black
-        {
-          setPixelColor(i, DimColor(getPixelColor(i)));
-          setPixelColor(lower_i, DimColor(getPixelColor(lower_i)));
-        }
-        lower_i--;
-      }
-      // Middle strip forwards (12 LEDs, 26-37)
-      // Technically we miss one LED step at the end, but it looks fine
-      for (int i = 0; i < 12; i++) {
-        if (i == Index || i == TotalSteps - Index) {
-          setPixelColor(i + 26, Color1);
-        } else {
-          setPixelColor(i + 26, DimColor(getPixelColor(i + 26)));
-        }
-      }
-      // Top strip backward & offset (8 LEDs, 38-45)
-      // Offset by 2 pixel on each side
-      for (int i = 0; i < 8; i++) {
-        if (i == Index - 2 || i == TotalSteps - Index - 2) {
-          setPixelColor(45 - i, Color1);
-        } else {
-          setPixelColor(45 - i, DimColor(getPixelColor(45 - i)));
+      for (uint8_t x = 0; x < this->Grid->width; x++) {
+        for (uint8_t y = 0; y < this->Grid->height; y++) {
+          uint8_t pixel = this->Grid->get(x, y);
+          if (pixel != PixelGrid::NA) {
+            // Light up curent column
+            if (x == Index || x == TotalSteps - Index) {
+              setPixelColor(pixel, Color1);
+            } else {
+              setPixelColor(pixel, DimColor(getPixelColor(pixel)));
+            }
+          }
         }
       }
       show();
@@ -283,46 +294,38 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
       ActivePattern = &StrobeFaceUpdate;
       Interval = interval;
+      // 8 for each row (including helmet)
+      // 4 for extra pause before flash
+      // 14 for extra pause before reset
       TotalSteps = 58;
       Color1 = color1;
       Index = 0;
     }
 
     // Scan vertically, then flash at the end
-    // 0-12, 13-25, 26-37, 38-45
     void StrobeFaceUpdate()
     {
       if (Index == 44) {
         // Flash
-        for (int i = 0; i < 46; i++) {
+        for (uint8_t i = 0; i < this->numPixels(); i++) {
           setPixelColor(i, Color1);
         }
       } else {
         // Vertical scan
         // Dim all pixels
-        for (int i = 0; i < 46; i++) {
+        for (uint8_t i = 0; i < 46; i++) {
           setPixelColor(i, DimColor(getPixelColor(i)));
         }
-        // Light current strip
-        if (Index == 0) {
-          // Bottom strip
-          for (int i = 0; i < 13; i++) {
-            setPixelColor(i, Color1);
-          }
-        } else if (Index == 8) {
-          // Lower strip
-          for (int i = 13; i < 26; i++) {
-            setPixelColor(i, Color1);
-          }
-        } else if (Index == 16) {
-          // Middle strip
-          for (int i = 26; i < 38; i++) {
-            setPixelColor(i, Color1);
-          }
-        } else if (Index == 24) {
-          // Top strip
-          for (int i = 38; i < 46; i++) {
-            setPixelColor(i, Color1);
+        // Light a row every 8 steps
+        if (Index % 8 == 0) {
+          // Current row
+          uint8_t row = Index / 8;
+          // Only first 4 are on the face
+          if (row < 4) {
+            // Light every pixel in the current row
+            for (uint8_t i = 0; i < this->Grid->width; i++) {
+              setPixelColor(this->Grid->get(i, row), Color1);
+            }
           }
         }
       }
@@ -345,11 +348,11 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
       if (Index == 44 || Index == 32) {
         // Flash
-        for (int i = 0; i < numPixels(); i++) {
+        for (uint8_t i = 0; i < numPixels(); i++) {
           setPixelColor(i, Color1);
         }
       } else {
-        for (int i = 0; i < 46; i++) {
+        for (uint8_t i = 0; i < numPixels(); i++) {
           setPixelColor(i, DimColor(getPixelColor(i)));
         }
       }
@@ -409,6 +412,21 @@ class NeoPatterns : public Adafruit_NeoPixel
         }
       }
       show();
+    }
+
+    void Fire(uint8_t interval) {
+      ActivePattern = &FireUpdate;
+      Interval = interval;
+      Color1 = this->Color(255, 96, 12);
+    }
+
+    void FireUpdate() {
+      for (int i = 0; i < this->numPixels(); i++) {
+        uint8_t flicker = random(0, 40);
+        // TODO: Use dim instead?
+        this->setPixelColor(i, max(255 - flicker, 0), max(96 - flicker, 0), max(12 - flicker, 0));
+      }
+      this->show();
     }
 
     // Returns the Red component of a 32-bit color
@@ -508,8 +526,9 @@ class Helmet
     // Current display mode (pattern switching)
     uint8_t current_mode = 0;
     // List of display mode method pointers
-    void (Helmet::*modes[11])() = {
+    void (Helmet::*modes[12])() = {
       &off,
+      &fire,
       &rainbowHelmet,
       &rainbowAll,
       &twinkle,
@@ -547,7 +566,7 @@ class Helmet
     void next() {
       this->current_mode++;
       // Loop at max mode
-      if (this->current_mode > 10) {
+      if (this->current_mode > 11) {
         this->current_mode = 0;
       }
       // Call current mode method
@@ -614,6 +633,13 @@ class Helmet
       face_strip.Twinkle(face_strip.Color(255, 255, 255), 40);
     }
 
+    // Fire
+    // TODO: This fire pattern doesn't actually look that great
+    void fire() {
+      helmet_strip.Fire(100);
+      face_strip.Off();
+    }
+
     // Turn off all the LEDs
     void off() {
       helmet_strip.Off();
@@ -625,8 +651,21 @@ class Helmet
 /* Global State */
 /****************/
 
+// Helmet is a single LED strip
 NeoPatterns helmet_strip = NeoPatterns(helmet_num_leds, helmet_strip_pin, NEO_GRB + NEO_KHZ800);
-NeoPatterns face_strip = NeoPatterns(face_num_leds, face_strip_pin, NEO_GRB + NEO_KHZ800);
+// Face LEDs
+uint8_t const NA = PixelGrid::NA;
+// Pixel grid pattern for face LED strip
+// Strip is 13, 13, 12, 8 from bottom to top in zig zag pattern
+uint8_t grid_pixels[] = {
+  NA, NA, 45, 44, 43, 42, 41, 40, 39, 38, NA, NA, NA,
+  26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, NA,
+  25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13,
+  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12
+};
+PixelGrid grid = PixelGrid(13, 4, grid_pixels);
+NeoPatterns face_strip = NeoPatterns(face_num_leds, face_strip_pin, NEO_GRB + NEO_KHZ800, grid);
+// Helmet
 Helmet helmet = Helmet(helmet_strip, face_strip);
 
 Bounce mode_button = Bounce();
