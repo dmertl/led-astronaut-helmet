@@ -478,13 +478,47 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 };
 
+/*
+ * Runs entire astronaut helmet.
+ */
 class Helmet
 {
   public:
+    // Current display mode (pattern switching)
+    uint8_t current_mode = 0;
+    // List of display mode method pointers
+    void (Helmet::*modes[10])() = {
+      &off,
+      &rainbowHelmet,
+      &rainbowAll,
+      &blinky,
+      &scannerHelmet,
+      &scannerFace,
+      &verticalScanFlash,
+      &redFlashlight,
+      &flashlight,
+      &police
+    };
+    // LED strip in helmet
     NeoPatterns& helmet_strip;
+    // LED strip on face shield
     NeoPatterns& face_strip;
+    
+    // Constructor
     Helmet(NeoPatterns& helmet, NeoPatterns& face);
+    
     void begin();
+    
+    // Switch to next mode
+    void next() {
+      current_mode++;
+      // Loop at max mode
+      if (current_mode > 9) {
+        current_mode = 0;
+      }
+      // Call current mode method
+      (*this.*modes[current_mode])();
+    }
     void Update();
     void rainbowHelmet();
     void rainbowAll();
@@ -504,6 +538,7 @@ Helmet::Helmet(NeoPatterns& helmet, NeoPatterns& face):
 void Helmet::begin() {
   helmet_strip.begin();
   face_strip.begin();
+  this->next();
 }
 
 void Helmet::Update() {
@@ -513,7 +548,7 @@ void Helmet::Update() {
 
 void Helmet::rainbowHelmet() {
   helmet_strip.RainbowCycle(10, 3);
-  face_strip.ColorWipe(face_strip.Color(0, 0, 0), 5);
+  face_strip.Off();
 }
 
 void Helmet::rainbowAll() {
@@ -565,9 +600,6 @@ void Helmet::verticalScanFlash() {
 /* Global State */
 /****************/
 
-// Current drawing mode
-uint8_t current_mode = 1;
-
 NeoPatterns helmet_strip = NeoPatterns(helmet_num_leds, helmet_strip_pin, NEO_GRB + NEO_KHZ800);
 NeoPatterns face_strip = NeoPatterns(face_num_leds, face_strip_pin, NEO_GRB + NEO_KHZ800);
 Helmet helmet = Helmet(helmet_strip, face_strip);
@@ -580,49 +612,17 @@ void setup() {
   mode_button.attach(button_pin);
   mode_button.interval(10);
 
-  // Init LED strips
+  // Init helmet
   helmet.begin();
-  draw();
 }
 
 void loop() {
   // Button
   if (mode_button.update()) {
     if (mode_button.fell()) {
-      current_mode++;
+      helmet.next();
     }
-    draw();
   }
   // LEDs
   helmet.Update();
-}
-
-void draw() {
-  switchMode(helmet, current_mode);
-}
-
-void switchMode(Helmet& helmet, uint8_t& mode) {
-  switch (mode) {
-    case 1: helmet.rainbowHelmet();
-      break;
-    case 2: helmet.rainbowAll();
-      break;
-    case 3: helmet.blinky();
-      break;
-    case 4: helmet.scannerHelmet();
-      break;
-    case 5: helmet.scannerFace();
-      break;
-    case 6: helmet.verticalScanFlash();
-      break;
-    case 7: helmet.redFlashlight();
-      break;
-    case 8: helmet.flashlight();
-      break;
-    case 9: helmet.police();
-      break;
-    default: helmet.off();
-      mode = 0;
-      break;
-  }
 }
