@@ -295,10 +295,10 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
-    // Initialize for a VERTICAL_SCAN_FLASH_FACE
-    void VerticalScanFlashFace(uint32_t color1, uint8_t interval)
+    // Initialize for a strobe on face
+    void StrobeFace(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = &VerticalScanFlashFaceUpdate;
+      ActivePattern = &StrobeFaceUpdate;
       Interval = interval;
       TotalSteps = 58;
       Color1 = color1;
@@ -307,7 +307,7 @@ class NeoPatterns : public Adafruit_NeoPixel
 
     // Scan vertically, then flash at the end
     // 0-12, 13-25, 26-37, 38-45
-    void VerticalScanFlashFaceUpdate()
+    void StrobeFaceUpdate()
     {
       if (Index == 44) {
         // Flash
@@ -347,18 +347,18 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
-    // Initialize for a VERTICAL_SCAN_FLASH_HELMET
-    void VerticalScanFlashHelmet(uint32_t color1, uint8_t interval)
+    // Initialize for a strobe on helmet
+    void StrobeHelmet(uint32_t color1, uint8_t interval)
     {
-      ActivePattern = &VerticalScanFlashHelmetUpdate;
+      ActivePattern = &StrobeHelmetUpdate;
       Interval = interval;
       TotalSteps = 58;
       Color1 = color1;
       Index = 0;
     }
 
-    // Helmet only does the flash
-    void VerticalScanFlashHelmetUpdate()
+    // Strobe pattern component for the helmet
+    void StrobeHelmetUpdate()
     {
       if (Index == 44 || Index == 32) {
         // Flash
@@ -494,7 +494,7 @@ class Helmet
       &blinky,
       &scannerHelmet,
       &scannerFace,
-      &verticalScanFlash,
+      &strobe,
       &redFlashlight,
       &flashlight,
       &police
@@ -505,96 +505,93 @@ class Helmet
     NeoPatterns& face_strip;
     
     // Constructor
-    Helmet(NeoPatterns& helmet, NeoPatterns& face);
-    
-    void begin();
+    Helmet(NeoPatterns& helmet, NeoPatterns& face):
+      helmet_strip(helmet), face_strip(face) {};
+
+    // Begin
+    void begin() {
+      helmet_strip.begin();
+      face_strip.begin();
+      this->next();
+    }
+
+    // Update
+    void Update() {
+      helmet_strip.Update();
+      face_strip.Update();
+    }
     
     // Switch to next mode
     void next() {
-      current_mode++;
+      this->current_mode++;
       // Loop at max mode
-      if (current_mode > 9) {
-        current_mode = 0;
+      if (this->current_mode > 9) {
+        this->current_mode = 0;
       }
       // Call current mode method
-      (*this.*modes[current_mode])();
+      (*this.*modes[this->current_mode])();
     }
-    void Update();
-    void rainbowHelmet();
-    void rainbowAll();
-    void blinky();
-    void scannerHelmet();
-    void scannerFace();
-    void redFlashlight();
-    void flashlight();
-    void police();
-    void off();
-    void verticalScanFlash();
+
+    // Helmet only rainbow pattern
+    void rainbowHelmet() {
+      helmet_strip.RainbowCycle(10, 3);
+      face_strip.Off();
+    }
+
+    // Helmet and face rainbow pattern
+    void rainbowAll() {
+      helmet_strip.RainbowCycle(10, 3);
+      face_strip.RainbowCycle(10, 3); 
+    }
+
+    // Rapidly flashing all the lights in white
+    void blinky() {
+      helmet_strip.TheaterChase(helmet_strip.Color(128, 128, 128), helmet_strip.Color(0, 0, 0), 40);
+      face_strip.TheaterChase(face_strip.Color(128, 128, 128), face_strip.Color(0, 0, 0), 40);
+    }
+
+    // Scan white back and forth horizontally on the helmet
+    void scannerHelmet() {
+      helmet_strip.Scanner(helmet_strip.Color(200, 200, 200), 80);
+      face_strip.Off();
+    }
+
+    // Scan white back and forth horizontally on the face shield
+    void scannerFace() {
+      helmet_strip.Off();
+      face_strip.FaceScanner(face_strip.Color(200, 200, 200), 80);
+    }
+
+    // Red flashlight to help preserve your night vision
+    void redFlashlight() {
+      helmet_strip.ColorWipe(helmet_strip.Color(200, 0, 0), 10);
+      face_strip.Off();
+    }
+
+    // White flashlight
+    void flashlight() {
+      helmet_strip.ColorWipe(helmet_strip.Color(128, 128, 128), 10);
+      face_strip.Off();
+    }
+
+    // Red and blue blinky on all the lights
+    void police() {
+      helmet_strip.TheaterChase(helmet_strip.Color(255, 0, 0), helmet_strip.Color(0, 0, 255), 100);
+      face_strip.TheaterChase(face_strip.Color(255, 0, 0), face_strip.Color(0, 0, 255), 100);
+    }
+
+    // Flash each horizontal strip from bottom to top, then flash all LEDs, all in white
+    void strobe() {
+      helmet_strip.StrobeHelmet(helmet_strip.Color(255, 255, 255), 60);
+      face_strip.StrobeFace(face_strip.Color(255, 255, 255), 60);
+    }
+
+    // Turn off all the LEDs
+    void off() {
+      helmet_strip.Off();
+      face_strip.Off();
+    }
 };
-
-Helmet::Helmet(NeoPatterns& helmet, NeoPatterns& face):
-  helmet_strip(helmet), face_strip(face) {};
-
-void Helmet::begin() {
-  helmet_strip.begin();
-  face_strip.begin();
-  this->next();
-}
-
-void Helmet::Update() {
-  helmet_strip.Update();
-  face_strip.Update();
-}
-
-void Helmet::rainbowHelmet() {
-  helmet_strip.RainbowCycle(10, 3);
-  face_strip.Off();
-}
-
-void Helmet::rainbowAll() {
-  helmet_strip.RainbowCycle(10, 3);
-  face_strip.RainbowCycle(10, 3);
-}
-
-void Helmet::blinky() {
-  helmet_strip.TheaterChase(helmet_strip.Color(128, 128, 128), helmet_strip.Color(0, 0, 0), 40);
-  face_strip.TheaterChase(face_strip.Color(128, 128, 128), face_strip.Color(0, 0, 0), 40);
-}
-
-void Helmet::scannerHelmet() {
-  helmet_strip.Scanner(helmet_strip.Color(200, 200, 200), 80);
-  face_strip.Off();
-}
-
-void Helmet::scannerFace() {
-  helmet_strip.Off();
-  face_strip.FaceScanner(face_strip.Color(200, 200, 200), 80);
-}
-
-void Helmet::redFlashlight() {
-  helmet_strip.ColorWipe(helmet_strip.Color(200, 0, 0), 10);
-  face_strip.Off();
-}
-
-void Helmet::flashlight() {
-  helmet_strip.ColorWipe(helmet_strip.Color(128, 128, 128), 10);
-  face_strip.Off();
-}
-
-void Helmet::police() {
-  helmet_strip.TheaterChase(helmet_strip.Color(255, 0, 0), helmet_strip.Color(0, 0, 255), 100);
-  face_strip.TheaterChase(face_strip.Color(255, 0, 0), face_strip.Color(0, 0, 255), 100);
-}
-
-void Helmet::off() {
-  helmet_strip.Off();
-  face_strip.Off();
-}
-
-void Helmet::verticalScanFlash() {
-  helmet_strip.VerticalScanFlashHelmet(helmet_strip.Color(255, 255, 255), 60);
-  face_strip.VerticalScanFlashFace(face_strip.Color(255, 255, 255), 60);
-}
 
 /****************/
 /* Global State */
