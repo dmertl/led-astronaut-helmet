@@ -16,7 +16,7 @@ const uint8_t strip_pin = 10;
 const uint16_t num_leds = 26;
 
 // Pattern types supported:
-enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE };
+enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE, TWINKLE };
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
@@ -74,6 +74,9 @@ class NeoPatterns : public Adafruit_NeoPixel
             break;
           case FADE:
             FadeUpdate();
+            break;
+          case TWINKLE:
+            TwinkleUpdate();
             break;
           default:
             break;
@@ -238,6 +241,28 @@ class NeoPatterns : public Adafruit_NeoPixel
       Increment();
     }
 
+    void Twinkle(uint32_t color1, uint8_t interval)
+    {
+      ActivePattern = TWINKLE;
+      Interval = interval;
+      Color1 = color1;
+    }
+
+    void TwinkleUpdate()
+    {
+      // Fade all pixels
+      for (uint8_t i = 0; i < numPixels(); i++) {
+        setPixelColor(i, DimColor(getPixelColor(i), 1));
+      }
+      // Randomly choose if we are going to light a pixel
+      uint8_t no_twinkle = random(0, 3);
+      if (no_twinkle == 0) {
+        // Light a random pixel
+        setPixelColor(random(0, numPixels()), Color1);
+      }
+      show();
+    }
+
     // Returns the Red component of a 32-bit color
     uint8_t Red(uint32_t color)
     {
@@ -310,6 +335,65 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 };
 
+/**
+ * Definitions of all the patterns the helmet runs.
+ */
+class Modes {
+  public:
+    /**
+     * Turn everything off.
+     * 
+     * @param strip Strip to run pattern on.
+     */
+    static void off(NeoPatterns& strip) {
+      strip.ColorWipe(strip.Color(0, 0, 0), 5);
+    }
+    /**
+     * Rainbow cycle.
+     * 
+     * @param strip Strip to run pattern on.
+     */
+    static void rainbow(NeoPatterns& strip) {
+      strip.RainbowCycle(5, 3);
+    }
+    /**
+     * White flashlight (1/3 brightness).
+     * 
+     * @param strip Strip to run pattern on.
+     */
+    static void flashlight(NeoPatterns& strip) {
+      strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 3), 10);
+    }
+    /**
+     * White theater chase.
+     */
+    static void theaterChase(NeoPatterns& strip) {
+      strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 80);
+    }
+    /**
+     * Red scanner, like Kitt in Knight Rider.
+     */
+    static void knightRider(NeoPatterns& strip) {
+      strip.Scanner(strip.Color(200, 0, 0), 50);
+    }
+    /**
+     * Red and blue blinky lights.
+     * 
+     * @param strip Strip to run pattern on.
+     */
+    static void police(NeoPatterns& strip) {
+      strip.TheaterChase(strip.Color(255, 0, 0), strip.Color(0, 0, 255), 100);
+    }
+    /**
+     * Twinkle random lights.
+     * 
+     * @param strip Strip to run pattern on.
+     */
+    static void twinkle(NeoPatterns& strip) {
+      strip.Twinkle(strip.Color(255, 255, 255), 80);
+    }
+};
+
 /****************/
 /* Global State */
 /****************/
@@ -348,30 +432,17 @@ void loop() {
 
 void draw() {
   switch (current_mode) {
-    // TODO: Better brightness control for rainbow, use a float
-    case 1: strip.RainbowCycle(5, 3);
+    case 1: Modes::rainbow(strip);
       break;
-    case 2: strip.RainbowCycle(5, 2);
+    case 2: Modes::twinkle(strip);
       break;
-    case 3: strip.RainbowCycle(5, 1);
+    case 3: Modes::knightRider(strip);
       break;
-    case 4: strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 3), 10);
+    case 4: Modes::theaterChase(strip);
       break;
-    case 5: strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 0), 10);
+    case 5: Modes::flashlight(strip);
       break;
-    case 6: strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 80);
-      break;
-    case 7: strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 40);
-      break;
-    case 8: strip.Scanner(strip.Color(200, 200, 200), 50);
-      break;
-    case 9: strip.Scanner(strip.Color(200, 200, 200), 100);
-      break;
-    case 10: strip.Scanner(strip.Color(200, 0, 0), 100);
-      break;
-    case 11: strip.Scanner(strip.Color(0, 0, 200), 100);
-      break;
-    default: strip.ColorWipe(strip.Color(0, 0, 0), 5);
+    default: Modes::off(strip);
       current_mode = 0;
       break;
   }

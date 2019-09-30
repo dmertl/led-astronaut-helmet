@@ -19,7 +19,4 @@
 - Bounce2
 - elapsedMillis
 
-## TODO
-
-- Cut down patterns to just the good ones
-- Cleanup
+Teensyduino setup instructions https://www.pjrc.com/teensy/teensyduino.html
