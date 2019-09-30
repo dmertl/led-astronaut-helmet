@@ -44,6 +44,7 @@ const uint16_t face_num_leds = 46;
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
+// TODO: May want to swap this to 0, 0 in top left as that's how neopixel matrix works
 class PixelGrid
 {
   public:
