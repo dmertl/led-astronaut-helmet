@@ -17,7 +17,7 @@ const uint8_t strip_2_pin = 8;
 const uint16_t num_leds = 44;
 
 // Pattern types supported:
-enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE, TWINKLE };
+enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE, TWINKLE, FIRE };
 // Patern directions supported:
 enum  direction { FORWARD, REVERSE };
 
@@ -37,6 +37,8 @@ class NeoPatterns : public Adafruit_NeoPixel
     uint16_t TotalSteps;  // total number of steps in the pattern
     uint16_t Index;  // current step within the pattern
     uint8_t Dim; // Amount to dim brightness (bit shift)
+    // Heat index for fire
+    uint8_t *heat;
 
     void (*OnComplete)();  // Callback on completion of pattern
 
@@ -78,6 +80,9 @@ class NeoPatterns : public Adafruit_NeoPixel
             break;
           case TWINKLE:
             TwinkleUpdate();
+            break;
+          case FIRE:
+            FireUpdate();
             break;
           default:
             break;
@@ -130,7 +135,7 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
       for (int i = 0; i < numPixels(); i++)
       {
-        setPixelColor(i, DimColor(Wheel(((i * 256 / numPixels()) + Index) & 255), Dim));
+        setPixelColor(i, DimColorShift(Wheel(((i * 256 / numPixels()) + Index) & 255), Dim));
       }
       show();
       Increment();
@@ -212,7 +217,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         }
         else  // fade to black
         {
-          setPixelColor(i, DimColor(getPixelColor(i)));
+          setPixelColor(i, DimColorShift(getPixelColor(i)));
         }
       }
       show();
@@ -252,18 +257,129 @@ class NeoPatterns : public Adafruit_NeoPixel
     void TwinkleUpdate()
     {
       // Fade all pixels
-      // TODO: Fade is kind of choppy, need float based DimColor
       for (uint8_t i = 0; i < numPixels(); i++) {
-        setPixelColor(i, DimColor(getPixelColor(i), 1));
+        setPixelColor(i, DimColor(getPixelColor(i), 0.8));
       }
       // Randomly choose if we are going to light a pixel
-      uint8_t no_twinkle = random(0, 3);
+      uint8_t no_twinkle = random(0, 5);
       if (no_twinkle == 0) {
         // Light a random pixel
         setPixelColor(random(0, numPixels()), Color1);
       }
       show();
     }
+
+    /**
+     * Fire is hardcoded custom implementation for coat with dual strips. For now.
+     */
+    void Fire(uint8_t interval) {
+      ActivePattern = FIRE;
+      Interval = interval;
+      heat = new uint8_t[44];
+    }
+
+    void FireUpdate() {
+      uint8_t cooldown;
+
+      // Cooldown pixels
+      for (uint8_t i = 0; i < numPixels(); i++) {
+        cooldown = random(0, ((55 * 10) / 22) + 2);
+        heat[i] = max(0, heat[i] - cooldown);
+      }
+
+      // First strip reverse direction
+
+      // Heat drifts up (down) and diffuses
+      for (uint8_t y = 0; y < 24; y++) {
+        heat[y] = (heat[y + 1] + heat[y + 2] + heat[y + 2]) / 3;
+      }
+
+      // Randomly ignite sparks near bottom (top)
+      if (random(255) < 120) {
+        uint8_t y = random(15, 22);
+        heat[y] = heat[y] + random(160, 255);
+      }
+
+      // Second strip normal direction, but offset by 22
+
+      // Heat drifts up and diffuses
+      for (uint8_t y = 44 - 1; y >= 24; y--) {
+        heat[y] = (heat[y - 1] + heat[y - 2] + heat[y - 2]) / 3;
+      }
+
+      // Randomly ignite sparks near bottom
+      if (random(255) < 120) {
+        uint8_t y = random(22, 29);
+        heat[y] = heat[y] + random(160, 255);
+      }
+      
+      // Set pixel colors (both strips)
+      for (uint8_t i = 0; i < numPixels(); i++) {
+        setPixelHeatColor(i, heat[i]);
+      }
+
+      show();
+    }
+
+    void setPixelHeatColor (int pixel, uint8_t temperature) {
+      // Scale 'heat' down from 0-255 to 0-191
+      uint8_t t192 = round((temperature/255.0)*191);
+     
+      // calculate ramp up from
+      uint8_t heatramp = t192 & 0x3F; // 0..63
+      heatramp <<= 2; // scale up to 0..252
+     
+      // figure out which third of the spectrum we're in:
+      if( t192 > 0x80) {                     // hottest
+        this->setPixelColor(pixel, this->DimColor(this->Color(255, 255, heatramp), 0.6));
+      } else if( t192 > 0x40 ) {             // middle
+        this->setPixelColor(pixel, this->DimColor(this->Color(255, heatramp, 0), 0.6));
+      } else {                               // coolest
+        this->setPixelColor(pixel, this->DimColor(this->Color(heatramp, 0, 0), 0.6));
+      }
+    }
+    
+// TODO: Meteor rain idea
+//    void Meteor(uint32_t color1, uint8_t interval) {
+//      ActivePattern = METEOR;
+//      Interval = interval;
+//      Color1 = color1;
+//    }
+//
+//    void MeteorUpdate() {
+//
+//      // Fade all pixels
+//      for (uint8_t i = 0; i < numPixels(); i++) {
+//        if (random(10) > 5) {
+//          setPixelColor(i, DimColor(getPixelColor(i), 0.75));
+//        }
+//      }
+//
+//      if (drawMeteor) {
+//        
+//        // Draw meteor (size 10)
+//        for (uint8_t i = 0; i < 10; i++) {
+//          if (meteorPosition - i >= 0) {
+//            setPixelColor(meteorPosition - i, Color1);
+//          }
+//        }
+//        
+//        // Move meteor along
+//        meteorPosition++;
+//  
+//        // If meteor is now off the strip, stop drawing it
+//        if (meteorPosition > numPixels()) {
+//          drawMeteor = false;
+//        }
+//      } else {
+//        // Choose if we should draw meteor
+//        if (random(100) > 99) {
+//          drawMeteor = true;
+//        }
+//      }
+//      
+//      show();
+//    }
 
     // Returns the Red component of a 32-bit color
     uint8_t Red(uint32_t color)
@@ -284,9 +400,16 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 
     // Return color, dimmed by 75% (used by scanner)
-    uint32_t DimColor(uint32_t color, uint8_t shift = 1)
+    uint32_t DimColorShift(uint32_t color, uint8_t shift = 1)
     {
       uint32_t dimColor = Color(Red(color) >> shift, Green(color) >> shift, Blue(color) >> shift);
+      return dimColor;
+    }
+
+    // Return color, dimmed to a percentage, default 25% of original
+    uint32_t DimColor(uint32_t color, float fade = 0.25)
+    {
+      uint32_t dimColor = Color(Red(color) * fade, Green(color) * fade, Blue(color) * fade);
       return dimColor;
     }
 
@@ -337,62 +460,100 @@ class NeoPatterns : public Adafruit_NeoPixel
     }
 };
 
-/**
- * Definitions of all the patterns the helmet runs.
+/*
+ * Runs entire astronaut helmet.
  */
-class Modes {
+class Coat
+{
   public:
+    // Current display mode (pattern switching)
+    uint8_t current_mode = 0;
+    // List of display mode method pointers
+    void (Coat::*modes[6])() = {
+      &off,
+      &twinkle,
+      &rainbow,
+      &theaterChase,
+      &knightRider,
+      &fire,
+    };
+    NeoPatterns& strip_left;
+    NeoPatterns& strip_right;
+    
+    // Constructor
+    Coat(NeoPatterns& left, NeoPatterns& right):
+      strip_left(left), strip_right(right) {};
+
+    void begin() {
+      strip_left.begin();
+      strip_right.begin();
+      this->next();
+    }
+
+    void update() {
+      strip_left.Update();
+      strip_right.Update();
+    }
+    
+    // Switch to next mode
+    void next() {
+      this->current_mode++;
+      // Loop at max mode
+      if (this->current_mode >= 6) {
+        this->current_mode = 0;
+      }
+      // Call current mode method
+      (*this.*modes[this->current_mode])();
+    }
+
+    /*********/
+    /* Modes */
+    /*********/
+
     /**
      * Turn everything off.
-     *
-     * @param strip Strip to run pattern on.
      */
-    static void off(NeoPatterns& strip) {
-      strip.ColorWipe(strip.Color(0, 0, 0), 5);
+    void off() {
+      strip_left.ColorWipe(strip_left.Color(0, 0, 0), 5);
+      strip_right.ColorWipe(strip_right.Color(0, 0, 0), 5);
     }
+
     /**
      * Rainbow cycle.
-     *
-     * @param strip Strip to run pattern on.
      */
-    static void rainbow(NeoPatterns& strip) {
-      strip.RainbowCycle(5, 3);
+    void rainbow() {
+      strip_left.RainbowCycle(5, 4);
+      strip_right.RainbowCycle(5, 4);
     }
-    /**
-     * White flashlight (1/3 brightness).
-     *
-     * @param strip Strip to run pattern on.
-     */
-    static void flashlight(NeoPatterns& strip) {
-      strip.ColorWipe(strip.DimColor(strip.Color(255, 255, 255), 3), 10);
-    }
+
     /**
      * White theater chase.
      */
-    static void theaterChase(NeoPatterns& strip) {
-      strip.TheaterChase(strip.Color(255, 255, 255), strip.Color(0, 0, 0), 80);
+    void theaterChase() {
+      strip_left.TheaterChase(strip_left.Color(150, 150, 150), strip_left.Color(0, 0, 0), 80);
+      strip_right.TheaterChase(strip_right.Color(150, 150, 150), strip_right.Color(0, 0, 0), 80);
     }
     /**
      * Red scanner, like Kitt in Knight Rider.
      */
-    static void knightRider(NeoPatterns& strip) {
-      strip.Scanner(strip.Color(200, 0, 0), 50);
-    }
-    /**
-     * Red and blue blinky lights.
-     *
-     * @param strip Strip to run pattern on.
-     */
-    static void police(NeoPatterns& strip) {
-      strip.TheaterChase(strip.Color(255, 0, 0), strip.Color(0, 0, 255), 100);
+    void knightRider() {
+      strip_left.Scanner(strip_left.Color(255, 255, 255), 50);
+      strip_right.Scanner(strip_right.Color(255, 255, 255), 50);
     }
     /**
      * Twinkle random lights.
-     *
-     * @param strip Strip to run pattern on.
      */
-    static void twinkle(NeoPatterns& strip) {
-      strip.Twinkle(strip.Color(255, 255, 255), 80);
+    void twinkle() {
+      strip_left.Twinkle(strip_left.Color(255, 255, 255), 40);
+      strip_right.Twinkle(strip_right.Color(255, 255, 255), 40);
+    }
+
+    /**
+     * Fire.
+     */
+    void fire() {
+      strip_left.Fire(40);
+      strip_right.Fire(40);
     }
 };
 
@@ -405,7 +566,7 @@ uint8_t current_mode = 1;
 
 NeoPatterns strip = NeoPatterns(num_leds, strip_pin, NEO_GRB + NEO_KHZ800);
 NeoPatterns strip_2 = NeoPatterns(num_leds, strip_2_pin, NEO_GRB + NEO_KHZ800);
-
+Coat coat = Coat(strip, strip_2);
 Bounce mode_button = Bounce();
 
 void setup() {
@@ -414,83 +575,79 @@ void setup() {
   mode_button.attach(button_pin);
   mode_button.interval(10);
 
-  // Init LED strip
-  strip.begin();
-  strip_2.begin();
-  draw();
+  // Init coat
+  coat.begin();
 }
 
 void loop() {
-
   // Button
   if (mode_button.update()) {
     if (mode_button.fell()) {
-      current_mode++;
+      coat.next();
     }
-    draw();
   }
 
-  // LED Strip
-  strip.Update();
-  strip_2.Update();
+  // Coat
+  coat.update();
 }
-
-void draw() {
-  switch (current_mode) {
-    // TODO: Make a Coat class with 2 LED strips as inputs
-    // TODO: Move modes into Coat class, have it control LED strips with patterns
-    /**
-     * Pattern ideas
-     * 
-     * left to right
-     * top to bottom
-     * Theater chase in opposite directions as stripes
-     * Could try fire pattern on each strip
-     * Breathe pattern, fade patches in and out of brightness
-     * 
-     * LED Layout
-     * back_l  back_r
-     * 1   44  1   44
-     * 2   43  2   43
-     * 3   42  3   42
-     * 4   41  4   41
-     * 5   40  5   40
-     * 6   39  6   39
-     * 7   38  7   38
-     * 8   37  8   37
-     * 9   36  9   36
-     * 10  35  10  35
-     * 11  34  11  34
-     * 12  33  12  33
-     * 13  32  13  32
-     * 14  31  14  31
-     * 15  30  15  30
-     * 16  29  16  29
-     * 17  28  17  28
-     * 18  27  18  27
-     * 19  26  19  26
-     * 20  25  20  25
-     * 21  24  21  24
-     * 22  23  22  23
-     */
-    case 1: Modes::rainbow(strip);
-      Modes::rainbow(strip_2);
-      break;
-    case 2: Modes::twinkle(strip);
-      Modes::twinkle(strip_2);
-      break;
-    case 3: Modes::knightRider(strip);
-      Modes::knightRider(strip_2);
-      break;
-    case 4: Modes::theaterChase(strip);
-      Modes::theaterChase(strip_2);
-      break;
-    case 5: Modes::flashlight(strip);
-      Modes::flashlight(strip_2);
-      break;
-    default: Modes::off(strip);
-      Modes::off(strip_2);
-      current_mode = 0;
-      break;
-  }
-}
+//
+// void draw() {
+//   switch (current_mode) {
+//     // TODO: Make a Coat class with 2 LED strips as inputs
+//     // TODO: Move modes into Coat class, have it control LED strips with patterns
+//     // TODO: Rainbow with less brightness might be better, show less of the LED spots
+//     /**
+//      * Pattern ideas
+//      *
+//      * left to right
+//      * top to bottom
+//      * Theater chase in opposite directions as stripes
+//      * Could try fire pattern on each strip
+//      * Breathe pattern, fade patches in and out of brightness
+//      *
+//      * LED Layout
+//      * back_l  back_r
+//      * 1   44  1   44
+//      * 2   43  2   43
+//      * 3   42  3   42
+//      * 4   41  4   41
+//      * 5   40  5   40
+//      * 6   39  6   39
+//      * 7   38  7   38
+//      * 8   37  8   37
+//      * 9   36  9   36
+//      * 10  35  10  35
+//      * 11  34  11  34
+//      * 12  33  12  33
+//      * 13  32  13  32
+//      * 14  31  14  31
+//      * 15  30  15  30
+//      * 16  29  16  29
+//      * 17  28  17  28
+//      * 18  27  18  27
+//      * 19  26  19  26
+//      * 20  25  20  25
+//      * 21  24  21  24
+//      * 22  23  22  23
+//      */
+//     case 1: Modes::rainbow(strip);
+//       Modes::rainbow(strip_2);
+//       break;
+//     case 2: Modes::twinkle(strip);
+//       Modes::twinkle(strip_2);
+//       break;
+//     case 3: Modes::knightRider(strip);
+//       Modes::knightRider(strip_2);
+//       break;
+//     case 4: Modes::theaterChase(strip);
+//       Modes::theaterChase(strip_2);
+//       break;
+//     case 5: Modes::flashlight(strip);
+//       Modes::flashlight(strip_2);
+//       break;
+//     default: Modes::off(strip);
+//       Modes::off(strip_2);
+//       current_mode = 0;
+//       break;
+//   }
+// }
