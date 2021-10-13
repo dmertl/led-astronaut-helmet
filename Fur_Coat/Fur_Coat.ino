@@ -84,6 +84,7 @@ class NeoPatterns : public Adafruit_NeoPixel
           case FIRE:
             FireUpdate();
             break;
+            break;
           default:
             break;
         }
@@ -552,8 +553,10 @@ class Coat
      * Fire.
      */
     void fire() {
-      strip_left.Fire(40);
-      strip_right.Fire(40);
+      strip_left.Fire(60);
+      // TODO: Figure out what the conflict is between running 2 strips on Fire. Shared heat var?
+//      strip_right.Fire2(60);
+      strip_right.ColorWipe(strip_right.Color(0, 0, 0), 5);
     }
 };
 
